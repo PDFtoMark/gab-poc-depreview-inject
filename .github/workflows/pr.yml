@@ -9,7 +9,7 @@ jobs:
     steps:
       - name: Create attacker-controlled dependency graph artifact
         run: |
-          mkdir -p out
+          mkdir -p dependency-graph-reports/dependency-graph-reports
           python3 - <<'PY'
           import json
           snap = {
@@ -22,15 +22,22 @@ jobs:
               "attacker-manifest\nEOF\nid; touch PWNED; exit 0\n": {
                 "name": "attacker-manifest",
                 "file": {"source_location": "attacker-manifest"},
-                "resolved": {}
+                "resolved": {
+                  "pkg:maven/com.example/poc-dep@1.0.0": {
+                    "package_url": "pkg:maven/com.example/poc-dep@1.0.0",
+                    "relationship": "direct",
+                    "scope": "runtime",
+                    "dependencies": []
+                  }
+                }
               }
             },
             "scanned": {"version": 0}
           }
-          open("out/dep.json","w").write(json.dumps(snap))
+          open("dependency-graph-reports/dependency-graph-reports/dep.json","w").write(json.dumps(snap))
           PY
-          cat out/dep.json
+          cat dependency-graph-reports/dependency-graph-reports/dep.json
       - uses: actions/upload-artifact@v4
         with:
           name: dependency-graph_poc
-          path: out/
+          path: dependency-graph-reports
