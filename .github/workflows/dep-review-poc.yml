@@ -72,6 +72,9 @@ jobs:
           EOF
       - name: Verify impact
         run: |
+          echo "payload event: ${{ github.event.workflow_run.event }}"
+          echo "payload head_branch: ${{ github.event.workflow_run.head_branch }}"
+          echo "payload head_repo: ${{ github.event.workflow_run.head_repository.full_name }}"
           echo "--- marker check ---"
           ls -la PWNED && echo "RCE CONFIRMED"
           echo "--- report head ---"
