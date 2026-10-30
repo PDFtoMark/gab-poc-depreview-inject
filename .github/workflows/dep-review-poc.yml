@@ -1,4 +1,4 @@
-name: Dependency Review PoC
+name: Dependency Review
 
 on:
   workflow_run:
@@ -6,22 +6,38 @@ on:
     types:
       - completed
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.head_sha }}
+  cancel-in-progress: true
+
 permissions:
-  actions: read
-  contents: write
-  pull-requests: read
+  actions: read # to download dependency graph artifact
+  contents: write # to submit dependency graph
+  pull-requests: read # to resolve PR info for fork PRs
 
 jobs:
   dependency-review:
     if: |
+      !github.event.repository.private &&
       github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          disable-telemetry: true
+          disable-sudo-and-containers: true
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            api.deps.dev:443
+            api.securityscorecards.dev:443
       - name: Get PR
         id: get-pr
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
+          retries: 3
           script: |
             const wfRun = context.payload.workflow_run;
             const pr = wfRun.pull_requests[0];
@@ -44,36 +60,51 @@ jobs:
               base_sha = matched.base.sha;
               head_sha = wfRun.head_sha;
             }
+            core.info(`is_fork:  ${pr ? 'false' : 'true'}`);
+            core.info(`number:   ${number}`);
+            core.info(`base_sha: ${base_sha}`);
+            core.info(`head_sha: ${head_sha}`);
+            core.setOutput('is_fork', pr ? 'false' : 'true');
             core.setOutput('number', number);
             core.setOutput('base_sha', base_sha);
             core.setOutput('head_sha', head_sha);
       - name: Download and submit dependency graph
-        id: depgraph
-        continue-on-error: true
         uses: gradle/actions/dependency-submission@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
           dependency-graph: download-and-submit
-      - uses: actions/checkout@v4
-      - name: Simulate dependency-review comment-content output
-        id: dependency-review
+      - id: dependency-review
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          retry-on-snapshot-warnings: true
+          retry-on-snapshot-warnings-timeout: 600
+          base-ref: ${{ steps.get-pr.outputs.base_sha }}
+          head-ref: ${{ steps.get-pr.outputs.head_sha }}
+          warn-only: true
+          show-patched-versions: true
+      - name: Structural dump of comment-content
+        if: always()
+        env:
+          CONTENT: ${{ steps.dependency-review.outputs.comment-content }}
         run: |
-          {
-            echo 'comment-content<<GHAOUT'
-            cat payload.txt
-            echo 'GHAOUT'
-          } >> "$GITHUB_OUTPUT"
-      - name: Save dependency review output report
+          printf '%s' "$CONTENT" > rendered.md
+          echo "==== bytes: $(wc -c < rendered.md)"
+          cat -A rendered.md | head -40
+      - if: ${{ steps.dependency-review.outputs.comment-content != null }}
+        name: Save dependency review output report
         run: |
           cat << 'EOF' > openssf-report.html
           ${{ steps.dependency-review.outputs.comment-content }}
           EOF
-      - name: Next action carrying the bot token
+      - name: Next action that receives the bot token
+        if: always()
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           github-token: dummy-org-bot-pat
           script: |
             core.info('next action executed')
       - name: Verify impact
+        if: always()
         run: |
-          echo "payload head_branch: ${{ github.event.workflow_run.head_branch }}"
-          ls -la PWNED && echo "RCE CONFIRMED"
+          echo "---- pwd/files ----"; ls -la
+          if [ -f PWNED ]; then echo "PWNED_EXISTS"; else echo "PWNED_MISSING"; fi
+          echo "---- openssf-report.html ----"; head -c 400 openssf-report.html || true
